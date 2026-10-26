@@ -319,14 +319,75 @@
         body: JSON.stringify({ message: text, chatId: activeChatId }),
       });
 
-      const payload = await response.json();
-
       if (!response.ok) {
-        throw new Error(payload.error || `Server responded with status ${response.status}`);
+        let errMessage = `Server responded with status ${response.status}`;
+        try {
+          const errData = await response.json();
+          if (errData.error) errMessage = errData.error;
+        } catch {}
+        throw new Error(errMessage);
       }
 
-      chat.messages.push({ role: "bot", text: payload.reply });
+      // Add placeholder bot message to render container
+      const botMsg = { role: "bot", text: "" };
+      chat.messages.push(botMsg);
+      renderMessages();
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let hasReceivedFirstChunk = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop(); // keep incomplete remainder
+
+        for (const part of parts) {
+          const trimmed = part.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const jsonStr = trimmed.slice(5).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const data = JSON.parse(jsonStr);
+            if (data.error) {
+              throw new Error(data.error);
+            }
+            if (data.text) {
+              if (!hasReceivedFirstChunk) {
+                hasReceivedFirstChunk = true;
+                typingIndicator.classList.add("hidden");
+              }
+              botMsg.text += data.text;
+
+              const botBubbles = messagesEl.querySelectorAll(".message-row.bot .bubble");
+              const currentBubble = botBubbles[botBubbles.length - 1];
+              if (currentBubble) {
+                currentBubble.innerHTML = formatMarkdown(botMsg.text);
+              }
+              scrollToBottom();
+            }
+          } catch (e) {
+            if (e.message && !e.message.includes("JSON")) throw e;
+          }
+        }
+      }
+
+      if (!botMsg.text) {
+        throw new Error("Empty response received from Lumen.");
+      }
     } catch (err) {
+      if (
+        chat.messages.length &&
+        chat.messages[chat.messages.length - 1].role === "bot" &&
+        !chat.messages[chat.messages.length - 1].text
+      ) {
+        chat.messages.pop();
+      }
       chat.messages.push({
         role: "error",
         text: err.message || "Unable to reach Lumen service. Please verify your connection or API key.",

@@ -94,7 +94,7 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(join(__dirname, "public")));
 
-/* POST /api/chat — send message with rate limiting and safety handling */
+/* POST /api/chat — stream message using SSE (Server-Sent Events) */
 app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
   const { message, chatId } = req.body;
 
@@ -105,43 +105,39 @@ app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
     return res.status(400).json({ error: "chatId is required." });
   }
 
+  // Set SSE headers for real-time token streaming
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
   try {
     const chat = getOrCreateChat(chatId);
-    const result = await chat.sendMessage(message.trim());
+    const result = await chat.sendMessageStream(message.trim());
 
-    // Inspect candidates for safety blocks
-    const candidate = result.response.candidates?.[0];
-    if (candidate?.finishReason && candidate.finishReason !== "STOP") {
-      if (candidate.finishReason === "SAFETY") {
-        return res.json({
-          reply:
-            "This inquiry could not be fulfilled due to safety guardrails. Please consider rephrasing your question.",
-        });
-      }
-      if (candidate.finishReason === "RECITATION") {
-        return res.json({
-          reply:
-            "The response was halted due to copyrighted recitation policy. Please ask for an original summary instead.",
-        });
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) {
+        res.write(`data: ${JSON.stringify({ text })}\n\n`);
       }
     }
 
-    const reply = result.response.text();
-    res.json({ reply });
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
   } catch (err) {
-    console.error("Gemini API error:", err.message);
+    console.error("Gemini stream error:", err.message);
 
     const isAuthError =
       err.message?.includes("API key") ||
       err.message?.includes("PERMISSION_DENIED");
 
-    const status = isAuthError ? 401 : 502;
+    const errorMsg = isAuthError
+      ? "Invalid API key. Check your .env file."
+      : "Something went wrong while communicating with Gemini. Please try again.";
 
-    res.status(status).json({
-      error: isAuthError
-        ? "Invalid API key. Check your .env file."
-        : "Something went wrong while communicating with Gemini. Please try again.",
-    });
+    res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
+    res.end();
   }
 });
 
