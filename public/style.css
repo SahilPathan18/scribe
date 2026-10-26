@@ -973,14 +973,14 @@ body.sidebar-collapsed {
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Main Stage fills the viewport cleanly without gaps */
+  /* Main Stage fills the viewport cleanly without shadows or borders on mobile */
   .main {
     border-radius: 0;
     border: none;
-    box-shadow: none;
+    box-shadow: none !important;
   }
 
-  /* Full mobile drawer with safe-area insets and elevation shadow */
+  /* Full mobile drawer: no shadow bleed when closed */
   .sidebar {
     position: fixed;
     top: 0;
@@ -989,19 +989,23 @@ body.sidebar-collapsed {
     width: min(310px, 84vw);
     min-width: unset;
     transform: translateX(-100%);
+    visibility: hidden;
+    pointer-events: none;
     z-index: 100;
-    box-shadow: 12px 0 36px rgba(0, 0, 0, 0.45);
+    box-shadow: none !important;
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
     -webkit-overflow-scrolling: touch;
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s ease;
   }
 
   .sidebar.open {
     transform: translateX(0);
-    opacity: 1 !important;
     visibility: visible !important;
     pointer-events: auto !important;
+    opacity: 1 !important;
+    border-right: 1px solid var(--line-subtle);
+    box-shadow: none !important;
   }
 
   /* Touch-friendly buttons (Apple/Google 40px touch target minimum) */
