@@ -966,53 +966,145 @@ body.sidebar-collapsed {
   }
 }
 
-/* ═══════════════════ Responsive ═══════════════════ */
+/* ═══════════════════ Responsive & Mobile Perfection ═══════════════════ */
 @media (max-width: 768px) {
   body {
     padding: 0;
+    -webkit-tap-highlight-color: transparent;
   }
 
+  /* Main Stage fills the viewport cleanly without gaps */
   .main {
     border-radius: 0;
     border: none;
     box-shadow: none;
   }
 
+  /* Full mobile drawer with safe-area insets and elevation shadow */
   .sidebar {
     position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
+    width: min(310px, 84vw);
+    min-width: unset;
     transform: translateX(-100%);
     z-index: 100;
+    box-shadow: 12px 0 36px rgba(0, 0, 0, 0.45);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    -webkit-overflow-scrolling: touch;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
   }
 
   .sidebar.open {
     transform: translateX(0);
-    width: var(--sidebar-w) !important;
-    min-width: var(--sidebar-w) !important;
     opacity: 1 !important;
     visibility: visible !important;
     pointer-events: auto !important;
   }
 
+  /* Touch-friendly buttons (Apple/Google 40px touch target minimum) */
+  .btn-sidebar-icon,
+  .btn-theme-toggle {
+    width: 38px;
+    height: 38px;
+    touch-action: manipulation;
+  }
+
+  /* Header with Safe Area Insets & Title Ellipsis */
   .top-nav {
-    padding: 0 16px;
+    padding: max(10px, env(safe-area-inset-top)) 16px 10px;
+    height: auto;
+    min-height: 56px;
   }
 
+  .top-nav-left {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .current-chat-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100vw - 128px);
+    font-size: 0.95rem;
+  }
+
+  /* Welcome Stage on Mobile */
   .welcome-heading {
-    font-size: 1.75rem;
+    font-size: 1.65rem;
+    padding: 0 12px;
+    line-height: 1.25;
   }
 
+  /* Messages: Full utilization of width */
   .messages {
-    padding: 18px 16px 12px;
+    padding: 14px 14px 10px;
   }
 
+  .message-row {
+    max-width: 100%;
+  }
+
+  .message-row.user .bubble {
+    max-width: 88%;
+    font-size: 0.95rem;
+  }
+
+  .message-row.bot .bubble {
+    font-size: 0.95rem;
+  }
+
+  /* Code blocks responsive scrolling with touch momentum */
+  .code-wrapper {
+    margin: 12px -4px;
+    border-radius: var(--radius-sm);
+  }
+
+  .code-wrapper pre {
+    padding: 12px 14px;
+    font-size: 0.8rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Composer Container & Safe Area Bottom Inset (Notch / Home bar) */
   .composer-container {
-    padding: 10px 14px 14px;
+    padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .composer-frame {
+    padding: 11px 14px 10px;
+    border-radius: var(--radius-lg);
+  }
+
+  /* CRITICAL: font-size 16px prevents iOS Safari from auto-zooming on focus */
+  .composer-frame textarea {
+    font-size: 16px;
+    line-height: 1.45;
+  }
+
+  .btn-send {
+    width: 36px;
+    height: 36px;
+    touch-action: manipulation;
   }
 
   .composer-hint {
     display: none;
+  }
+
+  .composer-footer {
+    font-size: 0.68rem;
+    margin-top: 6px;
+    padding: 0 4px;
+  }
+
+  /* Overlay backdrop blur for mobile */
+  .overlay {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
 }

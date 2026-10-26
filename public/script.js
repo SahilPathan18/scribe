@@ -440,7 +440,7 @@
   }
 
   /* ── Sidebar Toggle Management ── */
-  const SIDEBAR_PREF_KEY = "lumen_sidebar_collapsed";
+  const SIDEBAR_PREF_KEY = "scribe_sidebar_collapsed";
 
   function isMobile() {
     return window.innerWidth <= 768;
@@ -482,6 +482,26 @@
   newChatBtn.addEventListener("click", createChat);
   clearAllBtn.addEventListener("click", clearAllChats);
 
+  /* Touch Swipe Gesture to close sidebar on mobile */
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  sidebar.addEventListener("touchstart", (e) => {
+    if (!e.changedTouches || !e.changedTouches[0]) return;
+    touchStartX = e.changedTouches[0].clientX;
+    touchStartY = e.changedTouches[0].clientY;
+  }, { passive: true });
+
+  sidebar.addEventListener("touchend", (e) => {
+    if (!e.changedTouches || !e.changedTouches[0]) return;
+    const diffX = e.changedTouches[0].clientX - touchStartX;
+    const diffY = e.changedTouches[0].clientY - touchStartY;
+    // Swiped left by > 45px with predominantly horizontal motion
+    if (diffX < -45 && Math.abs(diffX) > Math.abs(diffY)) {
+      closeMobileSidebar();
+    }
+  }, { passive: true });
+
   /* Global Keyboard Shortcuts */
   window.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
@@ -498,7 +518,7 @@
   });
 
   /* ── Theme Management (Light / Dark) ── */
-  const THEME_KEY = "lumen_theme";
+  const THEME_KEY = "scribe_theme";
 
   function applyTheme(theme) {
     if (theme === "light") {
