@@ -980,7 +980,7 @@ body.sidebar-collapsed {
     box-shadow: none !important;
   }
 
-  /* Full mobile drawer: no shadow bleed when closed */
+  /* Full mobile drawer: rounded right edges and no shadow bleed */
   .sidebar {
     position: fixed;
     top: 0;
@@ -993,6 +993,8 @@ body.sidebar-collapsed {
     pointer-events: none;
     z-index: 100;
     box-shadow: none !important;
+    border-radius: 0 22px 22px 0;
+    overflow: hidden;
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
     -webkit-overflow-scrolling: touch;
@@ -1005,6 +1007,7 @@ body.sidebar-collapsed {
     pointer-events: auto !important;
     opacity: 1 !important;
     border-right: 1px solid var(--line-subtle);
+    border-radius: 0 22px 22px 0;
     box-shadow: none !important;
   }
 
