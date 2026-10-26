@@ -201,11 +201,6 @@ body.sidebar-collapsed {
 }
 
 .btn-sidebar-icon:active {
-  transform: scale(0.95);
-}
-
-.brand .btn-sidebar-icon {
-  margin-left: auto;
 }
 
 .brand-mark {

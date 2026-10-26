@@ -16,9 +16,8 @@
   const chatListEl        = $("#chat-list");
   const newChatBtn        = $("#new-chat-btn");
   const clearAllBtn       = $("#clear-all-btn");
-  const sidebar             = $("#sidebar");
-  const sidebarToggle       = $("#sidebar-toggle");
-  const sidebarCollapseBtn  = $("#sidebar-collapse-btn");
+  const sidebar           = $("#sidebar");
+  const sidebarToggle     = $("#sidebar-toggle");
   const overlay           = $("#overlay");
   const activeChatTitleEl = $("#active-chat-title");
   const themeToggle       = $("#theme-toggle");
@@ -417,7 +416,6 @@
   }
 
   if (sidebarToggle) sidebarToggle.addEventListener("click", toggleSidebar);
-  if (sidebarCollapseBtn) sidebarCollapseBtn.addEventListener("click", toggleSidebar);
   overlay.addEventListener("click", closeMobileSidebar);
   newChatBtn.addEventListener("click", createChat);
   clearAllBtn.addEventListener("click", clearAllChats);
