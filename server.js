@@ -28,9 +28,10 @@ const model = genAI.getGenerativeModel({
 
 /*
  * In-memory store: chatId → { session, lastActive }
- * Includes automatic expiration after 3 hours of inactivity.
+ * Bounded with MAX_SESSIONS and automatic expiration to prevent memory exhaustion DoS.
  */
 const chatSessions = new Map();
+const MAX_CHAT_SESSIONS = 500;
 const SESSION_TTL_MS = 3 * 60 * 60 * 1000;
 
 function getOrCreateChat(chatId) {
@@ -38,6 +39,12 @@ function getOrCreateChat(chatId) {
   if (existing) {
     existing.lastActive = Date.now();
     return existing.session;
+  }
+
+  // Evict oldest session if capacity reached
+  if (chatSessions.size >= MAX_CHAT_SESSIONS) {
+    const oldestKey = chatSessions.keys().next().value;
+    if (oldestKey) chatSessions.delete(oldestKey);
   }
 
   const session = model.startChat({
@@ -59,14 +66,21 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
-/* ──────────────────── Simple IP Rate Limiter ──────────────────── */
+/* ──────────────────── Robust IP Rate Limiter ──────────────────── */
 const ipRequests = new Map();
+const MAX_TRACKED_IPS = 5000;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 30;
 
 function rateLimitMiddleware(req, res, next) {
   const ip = req.ip || req.socket.remoteAddress || "unknown";
   const now = Date.now();
+
+  // Bounded tracking map to prevent memory exhaustion attacks
+  if (ipRequests.size >= MAX_TRACKED_IPS) {
+    ipRequests.clear();
+  }
+
   const windowData = ipRequests.get(ip) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW_MS };
 
   if (now > windowData.resetTime) {
@@ -89,20 +103,56 @@ function rateLimitMiddleware(req, res, next) {
   next();
 }
 
-/* ──────────────────── Express App ──────────────────── */
+/* ──────────────────── Input Validators ──────────────────── */
+const CHAT_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+const MAX_MESSAGE_LENGTH = 4000;
+
+/* ──────────────────── Express App & Hardening ──────────────────── */
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+
+// Disable information disclosure headers & configure proxy trust
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
+
+// Security Headers Middleware (OWASP recommended baseline)
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=()"
+  );
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none';"
+  );
+  next();
+});
+
+// Tight payload limit prevents memory overflow attacks
+app.use(express.json({ limit: "50kb" }));
 app.use(express.static(join(__dirname, "public")));
 
 /* POST /api/chat — stream message using SSE (Server-Sent Events) */
 app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
-  const { message, chatId } = req.body;
+  const { message, chatId } = req.body || {};
 
+  // Strict input validation
   if (!message || typeof message !== "string" || !message.trim()) {
-    return res.status(400).json({ error: "Message is required." });
+    return res.status(400).json({ error: "Message is required and must be a valid string." });
   }
-  if (!chatId) {
-    return res.status(400).json({ error: "chatId is required." });
+
+  const cleanMessage = message.trim();
+  if (cleanMessage.length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({
+      error: `Message exceeds maximum allowed length of ${MAX_MESSAGE_LENGTH} characters.`,
+    });
+  }
+
+  if (!chatId || typeof chatId !== "string" || !CHAT_ID_REGEX.test(chatId)) {
+    return res.status(400).json({ error: "Invalid chatId format." });
   }
 
   // Set SSE headers for real-time token streaming
@@ -114,7 +164,7 @@ app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
 
   try {
     const chat = getOrCreateChat(chatId);
-    const result = await chat.sendMessageStream(message.trim());
+    const result = await chat.sendMessageStream(cleanMessage);
 
     for await (const chunk of result.stream) {
       const text = chunk.text();
@@ -133,7 +183,7 @@ app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
       err.message?.includes("PERMISSION_DENIED");
 
     const errorMsg = isAuthError
-      ? "Invalid API key. Check your .env file."
+      ? "Invalid API key. Check your server configuration."
       : "Something went wrong while communicating with Gemini. Please try again.";
 
     res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
@@ -142,8 +192,13 @@ app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
 });
 
 /* DELETE /api/chat/:chatId — clear a specific chat session */
-app.delete("/api/chat/:chatId", (req, res) => {
-  chatSessions.delete(req.params.chatId);
+app.delete("/api/chat/:chatId", rateLimitMiddleware, (req, res) => {
+  const { chatId } = req.params;
+  if (!chatId || !CHAT_ID_REGEX.test(chatId)) {
+    return res.status(400).json({ error: "Invalid chatId format." });
+  }
+
+  chatSessions.delete(chatId);
   res.json({ ok: true });
 });
 
