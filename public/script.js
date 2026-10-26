@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Lumen — Frontend Logic & Conversation Manager
+   Scribe — Frontend Logic & Conversation Manager
    ═══════════════════════════════════════════════════════════════ */
 
 (() => {
@@ -26,7 +26,8 @@
   let chats = [];
   let activeChatId = null;
 
-  const STORAGE_KEY = "lumen_conversations";
+  const STORAGE_KEY = "scribe_conversations";
+  const LEGACY_STORAGE_KEY = "lumen_conversations";
 
   function persist() {
     try {
@@ -38,7 +39,7 @@
 
   function restore() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
       if (raw) {
         chats = JSON.parse(raw);
         // Automatically migrate any legacy stored titles
@@ -211,8 +212,8 @@
           return `
             <div class="message-row bot">
               <div class="message-header">
-                <div class="bot-monogram">L</div>
-                <span class="bot-name">Lumen</span>
+                <div class="bot-monogram">S</div>
+                <span class="bot-name">Scribe</span>
               </div>
               <div class="bubble">${formatMarkdown(msg.text)}</div>
             </div>`;
@@ -378,7 +379,7 @@
       }
 
       if (!botMsg.text) {
-        throw new Error("Empty response received from Lumen.");
+        throw new Error("Empty response received from Scribe.");
       }
     } catch (err) {
       if (
@@ -390,7 +391,7 @@
       }
       chat.messages.push({
         role: "error",
-        text: err.message || "Unable to reach Lumen service. Please verify your connection or API key.",
+        text: err.message || "Unable to reach Scribe service. Please verify your connection or API key.",
       });
     } finally {
       typingIndicator.classList.add("hidden");

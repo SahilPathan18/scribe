@@ -1,28 +1,28 @@
-# Lumen — Conversational Intelligence 🕯️
+# Scribe — Thoughtful Intelligence ✒️
 
-A refined, editorial conversational workspace built for college project demonstration and evaluation. Built on Node.js/Express and Google Gemini 2.0 (`gemini-2.0-flash`), styled with an editorial warm paper & stone aesthetic inspired by Claude and modern reading tools.
+A refined, editorial conversational workspace built for college project demonstration and evaluation. Built on Node.js/Express and Google Gemini (`gemini-3.5-flash-lite`), styled with an editorial warm paper & stone aesthetic inspired by Claude, bespoke journals, and modern reading tools.
 
 ---
 
 ## 🌿 Design & Aesthetic Philosophy
 
-Rather than using generic neon gradients, glow effects, or cliché AI prompts, **Lumen** is crafted with intentional, human-centered editorial design:
+Rather than using generic neon gradients, glow effects, or cliché AI prompts, **Scribe** is crafted with intentional, human-centered editorial design:
 - **Typography**: Paired editorial serif (**Newsreader**) for headers & dialogues with clean neutral sans (**Plus Jakarta Sans**) and monospaced code blocks (**JetBrains Mono**).
-- **Color Palette**: Warm charcoal canvas (`#13110f`), stone surfaces (`#1f1c19`), soft warm linen ink (`#f5f0e6`), and understated terracotta/clay accents (`#cc785c`).
-- **Reading-First Flow**: Longform responses are presented in an editorial column with comfortable measure, syntax-highlighted code blocks with a one-click **Copy** button, blockquotes, and graceful markdown hierarchy.
-- **Thoughtful Prompts**: Intellectual, inquiry-driven prompts for system design, distributed systems, and code review rather than basic emoji chips.
+- **Color Palette**: Warm oat parchment (`#f8f6f0`) & charcoal canvas (`#23201d`), stone surfaces, soft linen ink, and refined Royal Blue accents (`#2563eb`).
+- **Reading-First Flow**: Longform responses stream in real-time token-by-token with comfortable measure, syntax-highlighted code blocks with a one-click **Copy** button, blockquotes, and graceful markdown hierarchy.
+- **Thoughtful Design**: Center stage minimal welcome, subtle typing elevation animations, and left-side framed shadows.
 
 ---
 
 ## ✨ Features
 
-- **Gemini 2.0 Integration**: Express backend routes queries to `@google/generative-ai` with system instructions prioritizing clarity and depth.
-- **Multi-Dialogue Archive**: Create, switch, and delete multiple conversations stored in the sidebar.
+- **Gemini Real-Time SSE Streaming**: Express backend streams tokens in real-time using `sendMessageStream` and Server-Sent Events.
+- **Multi-Chat Archive**: Create, switch, and delete multiple conversations stored in the collapsible sidebar.
 - **Context Memory**: Backend retains active multi-turn session history in memory per `chatId`.
-- **Typing Indicator**: Gentle, understated shimmering indicator while the model reflects.
+- **Keyboard Shortcuts**: `Ctrl+B` toggles sidebar, `Ctrl+N` starts a new chat, `Enter` sends message, `Shift+Enter` creates a newline.
 - **Copyable Code Blocks**: Clean syntax blocks with instant clipboard copy functionality.
 - **Browser Persistence**: Conversations are saved to browser `localStorage`.
-- **Responsive Drawer**: Accessible mobile drawer with keyboard shortcuts (`Ctrl+N` / `Cmd+N` for new dialogue, `Esc` to close drawer).
+- **Responsive Drawer**: Accessible mobile drawer with auto-dimming overlay.
 - **Secure Configuration**: API keys are isolated on the server in `.env`.
 
 ---

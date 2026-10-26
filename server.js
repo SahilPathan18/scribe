@@ -23,7 +23,7 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({
   model: MODEL_NAME,
   systemInstruction:
-    "You are Lumen, an articulate and thoughtful intellectual companion. Your responses are clear, well-structured, insightful, and concise. Avoid patronizing filler, artificial enthusiasm, and repetitive pleasantries. Prefer elegant formatting and precise explanations.",
+    "You are Scribe, an articulate and thoughtful intellectual companion. Your responses are clear, well-structured, insightful, and concise. Avoid patronizing filler, artificial enthusiasm, and repetitive pleasantries. Prefer elegant formatting and precise explanations.",
 });
 
 /*
@@ -204,5 +204,5 @@ app.delete("/api/chat/:chatId", rateLimitMiddleware, (req, res) => {
 
 /* ──────────────────── Start ──────────────────── */
 app.listen(PORT, () => {
-  console.log(`\n  🕯️  Lumen is running → http://localhost:${PORT}\n`);
+  console.log(`\n  ✒️   Scribe is running → http://localhost:${PORT}\n`);
 });

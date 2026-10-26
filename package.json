@@ -1,7 +1,7 @@
 {
-  "name": "lumen",
+  "name": "scribe",
   "version": "1.0.0",
-  "description": "Lumen — Thoughtful conversational AI interface with warm editorial typography",
+  "description": "Scribe — Thoughtful conversational AI interface with warm editorial typography",
   "type": "module",
   "main": "server.js",
   "scripts": {
