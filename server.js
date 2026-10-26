@@ -18,10 +18,10 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-/* ──────────────────── Gemini Setup ──────────────────── */
+const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash",
+  model: MODEL_NAME,
   systemInstruction:
     "You are Lumen, an articulate and thoughtful intellectual companion. Your responses are clear, well-structured, insightful, and concise. Avoid patronizing filler, artificial enthusiasm, and repetitive pleasantries. Prefer elegant formatting and precise explanations.",
 });
