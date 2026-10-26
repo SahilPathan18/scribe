@@ -202,7 +202,26 @@ app.delete("/api/chat/:chatId", rateLimitMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-/* ──────────────────── Start ──────────────────── */
+/* GET /api/health — lightweight health check for uptime monitors & keep-alive pings */
+app.get("/api/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: Date.now(), uptime: process.uptime() });
+});
+
+/* ──────────────────── Start & Keep-Alive ──────────────────── */
 app.listen(PORT, () => {
   console.log(`\n  ✒️   Scribe is running → http://localhost:${PORT}\n`);
+
+  // Render automatically sets RENDER_EXTERNAL_URL in production (e.g. https://scribe-ai.onrender.com)
+  const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
+  if (keepAliveUrl) {
+    const PING_INTERVAL_MS = 13 * 60 * 1000; // 13 minutes (Render sleeps after 15m inactivity)
+    console.log(`  💓  Auto keep-alive active: pinging ${keepAliveUrl}/api/health every 13m\n`);
+    setInterval(async () => {
+      try {
+        await fetch(`${keepAliveUrl}/api/health`);
+      } catch (err) {
+        console.warn("[Heartbeat] Keep-alive ping error:", err.message);
+      }
+    }, PING_INTERVAL_MS);
+  }
 });
