@@ -777,9 +777,18 @@
       ) {
         chat.messages.pop();
       }
+
+      let errorText = err.message || "Failed to reach Scribe service. Please check your network or API key.";
+      if (
+        err.name === "TypeError" ||
+        /networkerror|failed to fetch|network error|load failed/i.test(errorText)
+      ) {
+        errorText = "Connection interrupted. If your cloud server was waking up from sleep or redeploying, please wait a few seconds and try sending your message again.";
+      }
+
       chat.messages.push({
         role: "error",
-        text: err.message || "Failed to reach Scribe service. Please check your network or API key.",
+        text: errorText,
       });
     } finally {
       typingIndicator.classList.add("hidden");

@@ -221,13 +221,29 @@ app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
-  await streamChatResponse({
-    chatId,
-    message: cleanMessage,
-    userId,
-    res,
-    enableRag,
-  });
+  // Send initial keepalive immediately so reverse proxies (Render, Cloudflare) don't drop the connection
+  res.write(": keepalive\n\n");
+
+  // Keep connection alive with periodic heartbeat comments while Gemini processes multi-turn tools
+  const keepAlive = setInterval(() => {
+    if (!res.writableEnded) {
+      try {
+        res.write(": heartbeat\n\n");
+      } catch {}
+    }
+  }, 5000);
+
+  try {
+    await streamChatResponse({
+      chatId,
+      message: cleanMessage,
+      userId,
+      res,
+      enableRag,
+    });
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 // POST /api/chat/rename — Rename chat title
