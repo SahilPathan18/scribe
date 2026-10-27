@@ -127,7 +127,7 @@ function currentUserId(req) {
   return null;
 }
 
-function loadOwnedChat(req, res) {
+async function loadOwnedChat(req, res) {
   const chatId = req.params.chatId || req.body?.chatId;
   if (!chatId || typeof chatId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(chatId)) {
     res.status(400).json({ error: "Invalid chatId format." });
@@ -138,7 +138,7 @@ function loadOwnedChat(req, res) {
     res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
     return null;
   }
-  const chat = db.getChat(chatId);
+  const chat = await db.getChat(chatId);
   if (!chat || chat.userId !== userId) {
     res.status(404).json({ error: "Conversation not found." });
     return null;
@@ -154,20 +154,20 @@ app.get("/api/auth/me", handleGetMe);
 /* ──────────────────── Chat Routes ──────────────────── */
 
 // GET /api/chats — List chats for authenticated user (or guest)
-app.get("/api/chats", (req, res) => {
+app.get("/api/chats", async (req, res) => {
   const userId = currentUserId(req);
   if (!userId) {
     return res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
   }
-  const chats = db.getUserChats(userId);
+  const chats = await db.getUserChats(userId);
   res.json({ chats });
 });
 
 // GET /api/chat/:chatId — Get single chat with messages
-app.get("/api/chat/:chatId", (req, res) => {
-  const chat = loadOwnedChat(req, res);
+app.get("/api/chat/:chatId", async (req, res) => {
+  const chat = await loadOwnedChat(req, res);
   if (!chat) return;
-  const messages = db.getMessages(chat.id);
+  const messages = await db.getMessages(chat.id);
   res.json({ chat, messages });
 });
 
@@ -194,7 +194,7 @@ app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
   }
 
   // Ensure chat belongs to user or create new
-  let chat = db.getChat(chatId);
+  let chat = await db.getChat(chatId);
   if (chat && chat.userId !== userId) {
     return res.status(403).json({ error: "Access denied to this conversation." });
   }
@@ -205,7 +205,7 @@ app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
         ? title.trim().slice(0, 120)
         : cleanMessage.slice(0, 36) + (cleanMessage.length > 36 ? "…" : "");
 
-    chat = db.saveChat({
+    chat = await db.saveChat({
       id: chatId,
       userId,
       title: chatTitle,
@@ -247,23 +247,23 @@ app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
 });
 
 // POST /api/chat/rename — Rename chat title
-app.post("/api/chat/rename", (req, res) => {
-  const chat = loadOwnedChat(req, res);
+app.post("/api/chat/rename", async (req, res) => {
+  const chat = await loadOwnedChat(req, res);
   if (!chat) return;
   const { title } = req.body || {};
   if (!title || typeof title !== "string" || !title.trim()) {
     return res.status(400).json({ error: "Valid title is required." });
   }
   chat.title = title.trim().slice(0, 120);
-  db.saveChat(chat);
+  await db.saveChat(chat);
   res.json({ ok: true });
 });
 
 // DELETE /api/chat/:chatId — Delete specific chat session
-app.delete("/api/chat/:chatId", rateLimitMiddleware, (req, res) => {
-  const chat = loadOwnedChat(req, res);
+app.delete("/api/chat/:chatId", rateLimitMiddleware, async (req, res) => {
+  const chat = await loadOwnedChat(req, res);
   if (!chat) return;
-  db.deleteChat(chat.id);
+  await db.deleteChat(chat.id);
   res.json({ ok: true });
 });
 
@@ -300,38 +300,38 @@ app.post("/api/documents/upload", rateLimitMiddleware, handleUpload, async (req,
 });
 
 // GET /api/documents — List documents
-app.get("/api/documents", (req, res) => {
+app.get("/api/documents", async (req, res) => {
   const userId = currentUserId(req);
   if (!userId) {
     return res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
   }
-  const documents = db.getUserDocuments(userId);
+  const documents = await db.getUserDocuments(userId);
   res.json({ documents });
 });
 
 // DELETE /api/documents/:docId — Delete document & vector embeddings
-app.delete("/api/documents/:docId", (req, res) => {
+app.delete("/api/documents/:docId", async (req, res) => {
   const userId = currentUserId(req);
   if (!userId) {
     return res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
   }
   const { docId } = req.params;
-  const doc = db.getDocument(docId);
+  const doc = await db.getDocument(docId);
   if (!doc || doc.userId !== userId) {
     return res.status(404).json({ error: "Document not found." });
   }
-  db.deleteDocument(docId);
+  await db.deleteDocument(docId);
   res.json({ ok: true });
 });
 
 /* ──────────────────── Sharing Routes ──────────────────── */
 
 // POST /api/chat/:chatId/share — Create shareable snapshot link
-app.post("/api/chat/:chatId/share", rateLimitMiddleware, (req, res) => {
-  const chat = loadOwnedChat(req, res);
+app.post("/api/chat/:chatId/share", rateLimitMiddleware, async (req, res) => {
+  const chat = await loadOwnedChat(req, res);
   if (!chat) return;
 
-  const messages = db.getMessages(chat.id);
+  const messages = await db.getMessages(chat.id);
   if (!messages.length) {
     return res.status(400).json({ error: "Cannot share an empty chat." });
   }
@@ -343,7 +343,7 @@ app.post("/api/chat/:chatId/share", rateLimitMiddleware, (req, res) => {
     createdAt: m.createdAt,
   }));
 
-  const shared = db.createSharedChat({
+  const shared = await db.createSharedChat({
     shareId,
     chatId: chat.id,
     title: chat.title,
@@ -363,9 +363,9 @@ app.post("/api/chat/:chatId/share", rateLimitMiddleware, (req, res) => {
 });
 
 // GET /api/share/:shareId — Fetch shared conversation data
-app.get("/api/share/:shareId", (req, res) => {
+app.get("/api/share/:shareId", async (req, res) => {
   const { shareId } = req.params;
-  const shared = db.getSharedChat(shareId);
+  const shared = await db.getSharedChat(shareId);
   if (!shared) {
     return res.status(404).json({ error: "Shared conversation not found or expired." });
   }
