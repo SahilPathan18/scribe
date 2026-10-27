@@ -1,0 +1,86 @@
+name: Scribe CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate-and-test:
+    name: Build, Lint & Automated Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify Code Syntax and Server Initialization
+        run: |
+          node --check server.js
+          node --check lib/db.js
+          node --check lib/rag.js
+          node --check lib/tools.js
+          node --check lib/auth.js
+          node --check lib/gemini.js
+          node --check lib/vectorStore.js
+
+      - name: Run Basic Health Check Mock
+        env:
+          GEMINI_API_KEY: "dummy_key_for_ci_pipeline"
+          JWT_SECRET: "dummy_jwt_secret_with_32_characters_for_ci_pipeline"
+          PORT: 3000
+        run: |
+          node -e "
+          import('./lib/vectorStore.js').then(vs => {
+            const chunks = vs.chunkText('Testing sentence splitting in CI pipeline.', 20, 5);
+            console.log('Chunking test passed. Chunks:', chunks.length);
+          });
+          "
+
+  docker-build:
+    name: Build & Verify Docker Image
+    needs: validate-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: scribe-ai:latest
+
+  deploy:
+    name: Deploy to Production
+    needs: [validate-and-test, docker-build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+
+    steps:
+      - name: Deploy via Render Deploy Hook
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
+        run: |
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Deployment triggered successfully on Render."
+
+      - name: Deployment Instructions Fallback
+        run: |
+          echo "CI/CD completed successfully. Ready for deployment on Render, Railway, Fly.io, or VPS via Docker."

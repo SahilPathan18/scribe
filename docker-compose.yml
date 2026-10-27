@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  scribe-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scribe-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - APP_URL=${APP_URL:-http://localhost:3000}
+    volumes:
+      - scribe-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  scribe-data:
+    driver: local

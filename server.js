@@ -1,13 +1,19 @@
 import "dotenv/config";
+import crypto from "crypto";
 import express from "express";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import multer from "multer";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+
+import { db } from "./lib/db.js";
+import { authMiddleware, handleRegister, handleLogin, handleGetMe } from "./lib/auth.js";
+import { processAndIndexDocument } from "./lib/rag.js";
+import { streamChatResponse, MODEL_NAME } from "./lib/gemini.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-/* ──────────────────── Config ──────────────────── */
+/* ──────────────────── Config & Validation ──────────────────── */
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.GEMINI_API_KEY;
 
@@ -18,65 +24,16 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
-const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({
-  model: MODEL_NAME,
-  systemInstruction:
-    "You are Scribe, an articulate and thoughtful intellectual companion. Your responses are clear, well-structured, insightful, and concise. Avoid patronizing filler, artificial enthusiasm, and repetitive pleasantries. Prefer elegant formatting and precise explanations.",
-});
-
-/*
- * In-memory store: chatId → { session, lastActive }
- * Bounded with MAX_SESSIONS and automatic expiration to prevent memory exhaustion DoS.
- */
-const chatSessions = new Map();
-const MAX_CHAT_SESSIONS = 500;
-const SESSION_TTL_MS = 3 * 60 * 60 * 1000;
-
-function getOrCreateChat(chatId) {
-  const existing = chatSessions.get(chatId);
-  if (existing) {
-    existing.lastActive = Date.now();
-    return existing.session;
-  }
-
-  // Evict oldest session if capacity reached
-  if (chatSessions.size >= MAX_CHAT_SESSIONS) {
-    const oldestKey = chatSessions.keys().next().value;
-    if (oldestKey) chatSessions.delete(oldestKey);
-  }
-
-  const session = model.startChat({
-    history: [],
-    generationConfig: { maxOutputTokens: 2048 },
-  });
-
-  chatSessions.set(chatId, { session, lastActive: Date.now() });
-  return session;
-}
-
-/* Clean up stale sessions every 30 minutes */
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, entry] of chatSessions.entries()) {
-    if (now - entry.lastActive > SESSION_TTL_MS) {
-      chatSessions.delete(id);
-    }
-  }
-}, 30 * 60 * 1000);
-
-/* ──────────────────── Robust IP Rate Limiter ──────────────────── */
+/* ──────────────────── Rate Limiter ──────────────────── */
 const ipRequests = new Map();
 const MAX_TRACKED_IPS = 5000;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 30;
+const MAX_REQUESTS_PER_WINDOW = 60; // 60 requests per minute
 
 function rateLimitMiddleware(req, res, next) {
   const ip = req.ip || req.socket.remoteAddress || "unknown";
   const now = Date.now();
 
-  // Bounded tracking map to prevent memory exhaustion attacks
   if (ipRequests.size >= MAX_TRACKED_IPS) {
     ipRequests.clear();
   }
@@ -96,125 +53,340 @@ function rateLimitMiddleware(req, res, next) {
     const retryAfter = Math.ceil((windowData.resetTime - now) / 1000);
     res.setHeader("Retry-After", retryAfter);
     return res.status(429).json({
-      error: `Too many requests. Please wait ${retryAfter}s before sending another message.`,
+      error: `Too many requests. Please wait ${retryAfter}s before sending another inquiry.`,
     });
   }
 
   next();
 }
 
-/* ──────────────────── Input Validators ──────────────────── */
-const CHAT_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
-const MAX_MESSAGE_LENGTH = 4000;
-
-/* ──────────────────── Express App & Hardening ──────────────────── */
+/* ──────────────────── Express App Setup ──────────────────── */
 const app = express();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB maximum upload
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ["application/pdf", "text/plain", "text/markdown"];
+    const allowedExts = /\.(pdf|txt|md)$/i;
+    const ok = allowedMimes.includes(file.mimetype) || allowedExts.test(file.originalname || "");
+    if (ok) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF, TXT, and MD files are supported."));
+    }
+  },
+});
 
-// Disable information disclosure headers & configure proxy trust
+const handleUpload = (req, res, next) => {
+  upload.single("file")(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({ error: "File exceeds 10MB limit." });
+      }
+      return res.status(400).json({ error: err.message });
+    }
+    if (err) {
+      return res.status(400).json({ error: err.message || "File upload failed." });
+    }
+    next();
+  });
+};
+
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 
-// Security Headers Middleware (OWASP recommended baseline)
+// Security Headers
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader(
-    "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=(), payment=()"
-  );
-  res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none';"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://en.wikipedia.org https://api.duckduckgo.com; frame-ancestors 'none';"
   );
   next();
 });
 
-// Tight payload limit prevents memory overflow attacks
-app.use(express.json({ limit: "50kb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+app.use(authMiddleware);
+
+// Serve static assets from public
 app.use(express.static(join(__dirname, "public")));
 
-/* POST /api/chat — stream message using SSE (Server-Sent Events) */
-app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
-  const { message, chatId } = req.body || {};
+/* ──────────────────── User / Guest Scoping & Ownership ──────────────────── */
+function currentUserId(req) {
+  if (req.user && req.user.id) {
+    return req.user.id;
+  }
+  const clientGuestId = req.headers["x-guest-id"];
+  if (clientGuestId && typeof clientGuestId === "string" && /^[a-zA-Z0-9_-]{8,64}$/.test(clientGuestId)) {
+    return `guest_${clientGuestId}`;
+  }
+  return null;
+}
 
-  // Strict input validation
+function loadOwnedChat(req, res) {
+  const chatId = req.params.chatId || req.body?.chatId;
+  if (!chatId || typeof chatId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(chatId)) {
+    res.status(400).json({ error: "Invalid chatId format." });
+    return null;
+  }
+  const userId = currentUserId(req);
+  if (!userId) {
+    res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
+    return null;
+  }
+  const chat = db.getChat(chatId);
+  if (!chat || chat.userId !== userId) {
+    res.status(404).json({ error: "Conversation not found." });
+    return null;
+  }
+  return chat;
+}
+
+/* ──────────────────── Auth Routes ──────────────────── */
+app.post("/api/auth/register", rateLimitMiddleware, handleRegister);
+app.post("/api/auth/login", rateLimitMiddleware, handleLogin);
+app.get("/api/auth/me", handleGetMe);
+
+/* ──────────────────── Chat Routes ──────────────────── */
+
+// GET /api/chats — List chats for authenticated user (or guest)
+app.get("/api/chats", (req, res) => {
+  const userId = currentUserId(req);
+  if (!userId) {
+    return res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
+  }
+  const chats = db.getUserChats(userId);
+  res.json({ chats });
+});
+
+// GET /api/chat/:chatId — Get single chat with messages
+app.get("/api/chat/:chatId", (req, res) => {
+  const chat = loadOwnedChat(req, res);
+  if (!chat) return;
+  const messages = db.getMessages(chat.id);
+  res.json({ chat, messages });
+});
+
+// POST /api/chat — Stream message using Server-Sent Events (SSE)
+app.post("/api/chat", rateLimitMiddleware, async (req, res) => {
+  const { message, chatId, title, enableRag = true } = req.body || {};
+
   if (!message || typeof message !== "string" || !message.trim()) {
-    return res.status(400).json({ error: "Message is required and must be a valid string." });
+    return res.status(400).json({ error: "Message is required." });
   }
 
   const cleanMessage = message.trim();
-  if (cleanMessage.length > MAX_MESSAGE_LENGTH) {
-    return res.status(400).json({
-      error: `Message exceeds maximum allowed length of ${MAX_MESSAGE_LENGTH} characters.`,
-    });
+  if (cleanMessage.length > 8000) {
+    return res.status(400).json({ error: "Message exceeds maximum allowed length of 8000 characters." });
   }
 
-  if (!chatId || typeof chatId !== "string" || !CHAT_ID_REGEX.test(chatId)) {
+  if (!chatId || typeof chatId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(chatId)) {
     return res.status(400).json({ error: "Invalid chatId format." });
   }
 
-  // Set SSE headers for real-time token streaming
+  const userId = currentUserId(req);
+  if (!userId) {
+    return res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
+  }
+
+  // Ensure chat belongs to user or create new
+  let chat = db.getChat(chatId);
+  if (chat && chat.userId !== userId) {
+    return res.status(403).json({ error: "Access denied to this conversation." });
+  }
+
+  if (!chat) {
+    const chatTitle =
+      typeof title === "string" && title.trim()
+        ? title.trim().slice(0, 120)
+        : cleanMessage.slice(0, 36) + (cleanMessage.length > 36 ? "…" : "");
+
+    chat = db.saveChat({
+      id: chatId,
+      userId,
+      title: chatTitle,
+      summary: null,
+      createdAt: Date.now(),
+    });
+  }
+
+  // Set SSE Headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
-  try {
-    const chat = getOrCreateChat(chatId);
-    const result = await chat.sendMessageStream(cleanMessage);
-
-    for await (const chunk of result.stream) {
-      const text = chunk.text();
-      if (text) {
-        res.write(`data: ${JSON.stringify({ text })}\n\n`);
-      }
-    }
-
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-    res.end();
-  } catch (err) {
-    console.error("Gemini stream error:", err.message);
-
-    const isAuthError =
-      err.message?.includes("API key") ||
-      err.message?.includes("PERMISSION_DENIED");
-
-    const errorMsg = isAuthError
-      ? "Invalid API key. Check your server configuration."
-      : "Something went wrong while communicating with Gemini. Please try again.";
-
-    res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
-    res.end();
-  }
+  await streamChatResponse({
+    chatId,
+    message: cleanMessage,
+    userId,
+    res,
+    enableRag,
+  });
 });
 
-/* DELETE /api/chat/:chatId — clear a specific chat session */
-app.delete("/api/chat/:chatId", rateLimitMiddleware, (req, res) => {
-  const { chatId } = req.params;
-  if (!chatId || !CHAT_ID_REGEX.test(chatId)) {
-    return res.status(400).json({ error: "Invalid chatId format." });
+// POST /api/chat/rename — Rename chat title
+app.post("/api/chat/rename", (req, res) => {
+  const chat = loadOwnedChat(req, res);
+  if (!chat) return;
+  const { title } = req.body || {};
+  if (!title || typeof title !== "string" || !title.trim()) {
+    return res.status(400).json({ error: "Valid title is required." });
   }
-
-  chatSessions.delete(chatId);
+  chat.title = title.trim().slice(0, 120);
+  db.saveChat(chat);
   res.json({ ok: true });
 });
 
-/* GET /api/health — lightweight health check for uptime monitors & keep-alive pings */
-app.get("/api/health", (req, res) => {
-  res.status(200).json({ status: "ok", timestamp: Date.now(), uptime: process.uptime() });
+// DELETE /api/chat/:chatId — Delete specific chat session
+app.delete("/api/chat/:chatId", rateLimitMiddleware, (req, res) => {
+  const chat = loadOwnedChat(req, res);
+  if (!chat) return;
+  db.deleteChat(chat.id);
+  res.json({ ok: true });
 });
 
-/* ──────────────────── Start & Keep-Alive ──────────────────── */
-app.listen(PORT, () => {
-  console.log(`\n  ✒️   Scribe is running → http://localhost:${PORT}\n`);
+/* ──────────────────── Document / RAG Routes ──────────────────── */
 
-  // Render automatically sets RENDER_EXTERNAL_URL in production (e.g. https://scribe-ai.onrender.com)
+// POST /api/documents/upload — Upload and embed document (PDF or text)
+app.post("/api/documents/upload", rateLimitMiddleware, handleUpload, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file was uploaded." });
+    }
+
+    const userId = currentUserId(req);
+    if (!userId) {
+      return res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
+    }
+
+    const docRecord = await processAndIndexDocument({
+      buffer: req.file.buffer,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      userId,
+    });
+
+    res.status(201).json({
+      ok: true,
+      document: docRecord,
+      message: `Document '${docRecord.name}' processed and indexed into ${docRecord.chunkCount} vector chunks.`,
+    });
+  } catch (err) {
+    console.error("[Document Upload Error]:", err.message);
+    res.status(400).json({ error: err.message || "Failed to process document." });
+  }
+});
+
+// GET /api/documents — List documents
+app.get("/api/documents", (req, res) => {
+  const userId = currentUserId(req);
+  if (!userId) {
+    return res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
+  }
+  const documents = db.getUserDocuments(userId);
+  res.json({ documents });
+});
+
+// DELETE /api/documents/:docId — Delete document & vector embeddings
+app.delete("/api/documents/:docId", (req, res) => {
+  const userId = currentUserId(req);
+  if (!userId) {
+    return res.status(400).json({ error: "Authentication or valid x-guest-id header is required." });
+  }
+  const { docId } = req.params;
+  const doc = db.getDocument(docId);
+  if (!doc || doc.userId !== userId) {
+    return res.status(404).json({ error: "Document not found." });
+  }
+  db.deleteDocument(docId);
+  res.json({ ok: true });
+});
+
+/* ──────────────────── Sharing Routes ──────────────────── */
+
+// POST /api/chat/:chatId/share — Create shareable snapshot link
+app.post("/api/chat/:chatId/share", rateLimitMiddleware, (req, res) => {
+  const chat = loadOwnedChat(req, res);
+  if (!chat) return;
+
+  const messages = db.getMessages(chat.id);
+  if (!messages.length) {
+    return res.status(400).json({ error: "Cannot share an empty chat." });
+  }
+
+  const shareId = "sh_" + crypto.randomBytes(16).toString("base64url");
+  const sanitizedMessages = messages.map((m) => ({
+    role: m.role,
+    text: m.text,
+    createdAt: m.createdAt,
+  }));
+
+  const shared = db.createSharedChat({
+    shareId,
+    chatId: chat.id,
+    title: chat.title,
+    messages: sanitizedMessages,
+  });
+
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const host = req.get("host");
+  const shareUrl = `${protocol}://${host}/share.html?id=${shareId}`;
+
+  res.json({
+    ok: true,
+    shareId,
+    shareUrl,
+    title: shared.title,
+  });
+});
+
+// GET /api/share/:shareId — Fetch shared conversation data
+app.get("/api/share/:shareId", (req, res) => {
+  const { shareId } = req.params;
+  const shared = db.getSharedChat(shareId);
+  if (!shared) {
+    return res.status(404).json({ error: "Shared conversation not found or expired." });
+  }
+  res.json({ shared });
+});
+
+/* ──────────────────── Error Handling Middleware ──────────────────── */
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ error: "File exceeds 10MB limit." });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  if (err) {
+    return res.status(400).json({ error: err.message || "Request failed." });
+  }
+  next();
+});
+
+/* ──────────────────── Health Check ──────────────────── */
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+  });
+});
+
+/* ──────────────────── Start Server ──────────────────── */
+app.listen(PORT, () => {
+  console.log(`\n  ✒️   Scribe is running → http://localhost:${PORT}`);
+  console.log(`  🧠  Model: ${MODEL_NAME}`);
+  console.log(`  📚  RAG Vector Store & Tools active\n`);
+
   const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
   if (keepAliveUrl) {
-    const PING_INTERVAL_MS = 13 * 60 * 1000; // 13 minutes (Render sleeps after 15m inactivity)
+    const PING_INTERVAL_MS = 13 * 60 * 1000;
     console.log(`  💓  Auto keep-alive active: pinging ${keepAliveUrl}/api/health every 13m\n`);
     setInterval(async () => {
       try {
