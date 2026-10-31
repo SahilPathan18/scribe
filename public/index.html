@@ -26,8 +26,13 @@
         </div>
         <div class="brand-text">
           <span class="brand-title">Scribe</span>
-          <span class="brand-edition">v2.5 · Intelligence Suite</span>
         </div>
+        <button id="sidebar-close-btn" class="btn-sidebar-close" aria-label="Close sidebar" title="Close sidebar">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
 
       <div class="sidebar-primary-actions">
@@ -99,22 +104,22 @@
         </button>
         <div class="current-chat-title" id="active-chat-title">New Chat</div>
         
-        <!-- Live Badges -->
-        <div class="nav-badges">
+        <!-- Live Badges (Quiet) -->
+        <div class="nav-badges hidden">
           <span id="memory-badge" class="badge-pill badge-memory hidden" title="Persistent context memory active across sessions">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04z" />
               <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04z" />
             </svg>
-            <span>Memory Active</span>
+            <span class="badge-text">Memory Active</span>
           </span>
 
-          <span id="rag-badge" class="badge-pill badge-rag" title="RAG document retrieval active">
+          <span id="rag-badge" class="badge-pill badge-rag hidden" title="RAG document retrieval active">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
             </svg>
-            <span id="rag-badge-text">RAG Ready</span>
+            <span id="rag-badge-text" class="badge-text">RAG Ready</span>
           </span>
         </div>
       </div>
@@ -184,36 +189,25 @@
       </div>
     </header>
 
-    <!-- Welcome stage (editorial, thoughtful) -->
+    <!-- Welcome stage (clean, minimal) -->
     <div id="welcome" class="welcome">
       <div class="welcome-container">
-        <div class="welcome-monogram">S</div>
-        <h1 class="welcome-heading">How can I assist you today?</h1>
-        <p class="welcome-subtext">Engage in dialogue, analyze uploaded documents, fetch live data, or search the web.</p>
+        <h1 class="welcome-heading">How can I help you today?</h1>
         
         <div class="welcome-prompts">
           <button class="welcome-card" data-prompt="What is the weather like in Tokyo right now?">
             <span class="card-icon">🌤️</span>
-            <div class="card-text">
-              <strong>Live Weather</strong>
-              <span>Fetch real-time global weather conditions</span>
-            </div>
+            <span>Live weather</span>
           </button>
 
           <button class="welcome-card" data-prompt="Search the web for the latest developments in quantum computing.">
             <span class="card-icon">🔍</span>
-            <div class="card-text">
-              <strong>Web Search</strong>
-              <span>Research current facts and authoritative news</span>
-            </div>
+            <span>Web search</span>
           </button>
 
           <button class="welcome-card" id="welcome-upload-trigger">
             <span class="card-icon">📄</span>
-            <div class="card-text">
-              <strong>Document RAG</strong>
-              <span>Upload PDFs to ground questions in your text</span>
-            </div>
+            <span>Upload document</span>
           </button>
         </div>
       </div>
@@ -265,7 +259,7 @@
           <textarea
             id="message-input"
             rows="1"
-            placeholder="Write your inquiry, or ask questions grounded in your documents…"
+            placeholder="Message Scribe…"
             aria-label="Write a message"
             required
           ></textarea>
@@ -292,7 +286,6 @@
             </div>
 
             <div class="composer-tools-right">
-              <span class="composer-hint"><kbd>↵</kbd> send &nbsp;·&nbsp; <kbd>⇧↵</kbd> newline</span>
               <button type="submit" id="send-btn" class="btn-send" aria-label="Send message" disabled>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="12" y1="19" x2="12" y2="5" />
@@ -304,7 +297,7 @@
         </div>
       </form>
       <div class="composer-footer">
-        <span>Scribe · Gemini 3.5 Flash Lite with RAG Grounding, Function Calling, and Persistent Memory.</span>
+        <span>Scribe can make mistakes. Verify important info.</span>
       </div>
     </div>
 

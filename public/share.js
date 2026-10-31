@@ -36,6 +36,33 @@
     });
 
     processed = escapeHtml(processed);
+
+    // Parse Markdown Tables
+    const tableBlocks = [];
+    processed = processed.replace(/(?:(?:^|\n)\|[^\n]+\|[ \t]*(?:\n\|[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|[ \t]*)(?:\n\|[^\n]+\|[ \t]*)+)/g, (rawTable) => {
+      const lines = rawTable.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) return rawTable;
+
+      const parseRow = (line, isHeader) => {
+        const tag = isHeader ? "th" : "td";
+        const cells = line.replace(/^\|/, "").replace(/\|$/, "").split("|");
+        return "<tr>" + cells.map((c) => `<${tag}>${c.trim()}</${tag}>`).join("") + "</tr>";
+      };
+
+      const headerLine = lines[0];
+      const bodyLines = lines.slice(2);
+
+      let tableHtml = `<div class="table-wrapper"><table><thead>${parseRow(headerLine, true)}</thead>`;
+      if (bodyLines.length > 0) {
+        tableHtml += `<tbody>${bodyLines.map((l) => parseRow(l, false)).join("")}</tbody>`;
+      }
+      tableHtml += `</table></div>`;
+
+      const id = `__TABLE_BLOCK_${tableBlocks.length}__`;
+      tableBlocks.push(tableHtml);
+      return `\n\n${id}\n\n`;
+    });
+
     processed = processed.replace(/^### (.*$)/gim, "<h3>$1</h3>");
     processed = processed.replace(/^## (.*$)/gim, "<h2>$1</h2>");
     processed = processed.replace(/^# (.*$)/gim, "<h1>$1</h1>");
@@ -53,10 +80,24 @@
       .map((b) => {
         const t = b.trim();
         if (!t) return "";
-        if (t.startsWith("<h1") || t.startsWith("<h2") || t.startsWith("<h3") || t.startsWith("<blockquote") || t.startsWith("<ul") || t.startsWith("__CODE_BLOCK_")) return t;
+        if (
+          t.startsWith("<h1") ||
+          t.startsWith("<h2") ||
+          t.startsWith("<h3") ||
+          t.startsWith("<blockquote") ||
+          t.startsWith("<ul") ||
+          t.startsWith("__CODE_BLOCK_") ||
+          t.startsWith("__TABLE_BLOCK_")
+        ) {
+          return t;
+        }
         return `<p>${t.replace(/\n/g, "<br>")}</p>`;
       })
       .join("");
+
+    tableBlocks.forEach((tbl, idx) => {
+      processed = processed.replace(`__TABLE_BLOCK_${idx}__`, tbl);
+    });
 
     codeBlocks.forEach((item, idx) => {
       const placeholder = `__CODE_BLOCK_${idx}__`;

@@ -23,6 +23,7 @@
   const clearAllBtn         = $("#clear-all-btn");
   const sidebar             = $("#sidebar");
   const sidebarToggle       = $("#sidebar-toggle");
+  const sidebarCloseBtn     = $("#sidebar-close-btn");
   const overlay             = $("#overlay");
   const activeChatTitleEl   = $("#active-chat-title");
   const themeToggle         = $("#theme-toggle");
@@ -158,7 +159,7 @@
     return "chat_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
   }
 
-  /* ── Markdown Formatter with Syntax Highlighting & Code Copy ── */
+  /* ── Markdown Formatter with Tables, Syntax Highlighting & Code Copy ── */
   function formatMarkdown(text) {
     if (!text) return "";
 
@@ -170,6 +171,32 @@
     });
 
     processed = escapeHtml(processed);
+
+    // Parse Markdown Tables
+    const tableBlocks = [];
+    processed = processed.replace(/(?:(?:^|\n)\|[^\n]+\|[ \t]*(?:\n\|[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|[ \t]*)(?:\n\|[^\n]+\|[ \t]*)+)/g, (rawTable) => {
+      const lines = rawTable.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) return rawTable;
+
+      const parseRow = (line, isHeader) => {
+        const tag = isHeader ? "th" : "td";
+        const cells = line.replace(/^\|/, "").replace(/\|$/, "").split("|");
+        return "<tr>" + cells.map((c) => `<${tag}>${c.trim()}</${tag}>`).join("") + "</tr>";
+      };
+
+      const headerLine = lines[0];
+      const bodyLines = lines.slice(2);
+
+      let tableHtml = `<div class="table-wrapper"><table><thead>${parseRow(headerLine, true)}</thead>`;
+      if (bodyLines.length > 0) {
+        tableHtml += `<tbody>${bodyLines.map((l) => parseRow(l, false)).join("")}</tbody>`;
+      }
+      tableHtml += `</table></div>`;
+
+      const id = `__TABLE_BLOCK_${tableBlocks.length}__`;
+      tableBlocks.push(tableHtml);
+      return `\n\n${id}\n\n`;
+    });
 
     processed = processed.replace(/^### (.*$)/gim, "<h3>$1</h3>");
     processed = processed.replace(/^## (.*$)/gim, "<h2>$1</h2>");
@@ -194,13 +221,18 @@
           trimmed.startsWith("<h3") ||
           trimmed.startsWith("<blockquote") ||
           trimmed.startsWith("<ul") ||
-          trimmed.startsWith("__CODE_BLOCK_")
+          trimmed.startsWith("__CODE_BLOCK_") ||
+          trimmed.startsWith("__TABLE_BLOCK_")
         ) {
           return trimmed;
         }
         return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
       })
       .join("");
+
+    tableBlocks.forEach((tbl, index) => {
+      processed = processed.replace(`__TABLE_BLOCK_${index}__`, tbl);
+    });
 
     codeBlocks.forEach((item, index) => {
       const placeholder = `__CODE_BLOCK_${index}__`;
@@ -325,10 +357,16 @@
                 <div class="bot-monogram">S</div>
                 <span class="bot-name">Scribe</span>
                 ${toolLogHtml}
-                <button type="button" class="btn-speak-msg" data-text="${escapeHtml(msg.text)}" title="Read aloud (Text to Speech)">
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                  <span>Speak</span>
-                </button>
+                <div class="message-header-actions">
+                  <button type="button" class="btn-copy-msg" data-text="${escapeHtml(msg.text)}" title="Copy message text">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span>Copy</span>
+                  </button>
+                  <button type="button" class="btn-speak-msg" data-text="${escapeHtml(msg.text)}" title="Read aloud (Text to Speech)">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                    <span>Speak</span>
+                  </button>
+                </div>
               </div>
               <div class="bubble">${formatMarkdown(msg.text)}${citationsHtml}</div>
             </div>`;
@@ -337,9 +375,32 @@
       .join("");
 
     attachCodeCopyListeners();
+    attachMsgCopyListeners();
     attachCitationListeners();
     attachTtsListeners();
     scrollToBottom();
+  }
+
+  function attachMsgCopyListeners() {
+    messagesEl.querySelectorAll(".btn-copy-msg").forEach((btn) => {
+      btn.onclick = async () => {
+        const text = btn.getAttribute("data-text") || "";
+        try {
+          await navigator.clipboard.writeText(text);
+          btn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Copied</span>`;
+          showToast("Response copied to clipboard");
+          setTimeout(() => {
+            btn.innerHTML = `
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>Copy</span>`;
+          }, 1800);
+        } catch {
+          showToast("Failed to copy response");
+        }
+      };
+    });
   }
 
   function attachCodeCopyListeners() {
@@ -1268,7 +1329,7 @@
   const SIDEBAR_PREF_KEY = "scribe_sidebar_collapsed";
 
   function isMobile() {
-    return window.innerWidth <= 768;
+    return window.innerWidth <= 860;
   }
 
   function openMobileSidebar() {
@@ -1303,6 +1364,7 @@
   }
 
   if (sidebarToggle) sidebarToggle.addEventListener("click", toggleSidebar);
+  if (sidebarCloseBtn) sidebarCloseBtn.addEventListener("click", closeMobileSidebar);
   if (overlay) overlay.addEventListener("click", closeMobileSidebar);
   if (newChatBtn) newChatBtn.addEventListener("click", createChat);
   if (clearAllBtn) clearAllBtn.addEventListener("click", clearAllChats);
