@@ -380,27 +380,10 @@ body.sidebar-collapsed {
 
 /* Sidebar Footer */
 .sidebar-footer {
-  padding: 14px 18px;
+  padding: 12px 14px;
   border-top: 1px solid var(--line-subtle);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.system-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 0.74rem;
-  color: var(--ink-muted);
-  letter-spacing: 0.02em;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #10b981;
 }
 
 .btn-clear-archive {
@@ -1651,6 +1634,7 @@ body.sidebar-collapsed {
 }
 
 .user-profile-widget {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1658,7 +1642,7 @@ body.sidebar-collapsed {
   background: var(--bg-surface);
   border: 1px solid var(--line-subtle);
   border-radius: var(--radius-md);
-  margin-bottom: 12px;
+  margin-bottom: 0;
   transition: all .2s ease;
 }
 
